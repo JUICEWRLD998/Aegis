@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+*.log
+target/
+dist/
+.DS_Store
+*.wasm
+!contract/wit/deps/**/*.wasm

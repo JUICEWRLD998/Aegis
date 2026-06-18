@@ -1,0 +1,30 @@
+package z:tenant-banking@0.1.0;
+
+// The Aegis banking TEE contract.
+//
+// Capability set = exactly the host interfaces imported below. The host will not
+// load a contract that imports an interface its tenant world lacks, and these
+// imports are the contract's ENTIRE ability to touch the outside world.
+world tenant-banking {
+  import host:tenant/tenant-context@1.0.0;
+  import host:interfaces/logging@2.1.0;
+  import host:interfaces/kv-store@2.1.0;
+  import host:interfaces/http@2.1.0;                    // query-lenders: NO PII
+  import host:interfaces/http-with-placeholders@2.1.0;  // submit-application: PII via {{profile.*}}
+
+  export contracts;
+}
+
+interface contracts {
+  record generic-input {
+    input:        option<list<u8>>,
+    user-profile: option<list<u8>>,
+    context:      option<list<u8>>,
+  }
+
+  // Indicative offers using selective-disclosure assertions only (income>=X, etc.).
+  query-lenders: func(req: generic-input) -> result<list<u8>, string>;
+
+  // Full application to one lender. PII injected host-side at egress via placeholders.
+  submit-application: func(req: generic-input) -> result<list<u8>, string>;
+}
