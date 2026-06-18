@@ -27,8 +27,10 @@ import {
   type BankingFunction,
 } from "../t3/delegation";
 import { getDisclosureAssertions } from "../t3/profile";
-import { queryLenders, submitApplication, type LenderOffer } from "../t3/banking";
+import type { LenderOffer } from "../t3/banking";
 import { getAuditTrail } from "../t3/audit";
+import { queryAllLenders, acceptOffer } from "../lenders/client";
+import { LENDERS } from "../lenders/catalog";
 
 type Handler = (ctx: AgentContext, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -179,11 +181,13 @@ const handlers: Record<string, Handler> = {
       .map(([k]) => k)
       .sort();
     const proofRef = `sd:${trueClaims.join(",")}`;
+    ctx.lastProof = { proofRef, assertions };
     return { proof_ref: proofRef, assertions };
   },
 
-  /** Invoke the banking contract to collect indicative offers. Lenders receive only
-   *  the disclosure proof + agent identity — never PII. */
+  /** Send a signed, PII-free request to the lenders, each of which cryptographically
+   *  verifies the agent's authority before quoting. Lenders see only the disclosure
+   *  proof + the agent's verified identity — never PII. */
   async query_lenders(ctx, args) {
     const grant = requireConsent(ctx, "query-lenders");
     if (isError(grant)) return grant;
@@ -197,26 +201,56 @@ const handlers: Record<string, Handler> = {
       };
     }
 
-    let offers: LenderOffer[];
-    let source: "contract" | "stub";
+    // Reuse the proof the agent derived; derive on demand if it skipped that step.
+    const proof = ctx.lastProof ?? {
+      assertions: await getDisclosureAssertions(ctx.session),
+      proofRef: "",
+    };
+    if (!ctx.lastProof) ctx.lastProof = proof;
+
+    const lenderIds = LENDERS.slice(0, grant.maxLenders).map((l) => l.id);
     try {
-      offers = await queryLenders(ctx.session, ctx.tenantDid, { requestedAmount, termMonths });
-      source = "contract";
-      if (offers.length === 0 && ctx.allowStubFallback) {
-        offers = stubOffers(requestedAmount, termMonths);
-        source = "stub";
-      }
+      const responses = await queryAllLenders(ctx, {
+        assertions: proof.assertions,
+        proofRef: proof.proofRef,
+        requestedAmount,
+        termMonths,
+        lenderIds,
+      });
+
+      const offers: LenderOffer[] = responses
+        .filter((r) => r.decision === "offer" && r.offer)
+        .map((r) => r.offer as LenderOffer);
+      ctx.lastOffers = offers;
+
+      return {
+        source: "lenders",
+        lender_count: responses.length,
+        offers,
+        // surface the verification result + any declines so the agent can reason
+        results: responses.map((r) => ({
+          lender_id: r.lender_id,
+          lender_name: r.lender_name,
+          decision: r.decision,
+          reason: r.reason,
+          apr: r.offer?.apr,
+          max_amount: r.offer?.maxAmount,
+          verified: r.verified,
+        })),
+      };
     } catch (e) {
       if (!ctx.allowStubFallback) {
         return { error: "query_failed", detail: (e as Error).message };
       }
-      offers = stubOffers(requestedAmount, termMonths);
-      source = "stub";
+      const offers = stubOffers(requestedAmount, termMonths).slice(0, grant.maxLenders);
+      ctx.lastOffers = offers;
+      return {
+        source: "stub",
+        note: `lenders unreachable, using indicative stub offers: ${(e as Error).message}`,
+        lender_count: offers.length,
+        offers,
+      };
     }
-
-    offers = offers.slice(0, grant.maxLenders); // honour the consented lender cap
-    ctx.lastOffers = offers;
-    return { source, lender_count: offers.length, offers };
   },
 
   /** Rank the offers (cheapest APR wins) and recommend one. Pure deterministic logic. */
@@ -299,24 +333,24 @@ const handlers: Record<string, Handler> = {
       };
     }
 
+    const proof = ctx.lastProof ?? {
+      assertions: await getDisclosureAssertions(ctx.session),
+      proofRef: "",
+    };
     try {
-      const res = await submitApplication(ctx.session, ctx.tenantDid, {
+      // The transaction-authorization call: a signed submit-application request the
+      // lender re-verifies (authority + agent identity) before issuing a reference.
+      const res = await acceptOffer(ctx, {
         lenderId,
         offerId,
+        assertions: proof.assertions,
+        proofRef: proof.proofRef,
         amount,
         termMonths,
       });
-      return { source: "contract", ...res };
+      return { ...res, step_up_id: su.stepUpId };
     } catch (e) {
-      if (!ctx.allowStubFallback) {
-        return { error: "submit_failed", detail: (e as Error).message };
-      }
-      return {
-        source: "stub",
-        status: "submitted",
-        referenceId: `APP-${lenderId}-${offerId}`,
-        stepUpId: su.stepUpId,
-      };
+      return { error: "submit_failed", detail: (e as Error).message };
     }
   },
 

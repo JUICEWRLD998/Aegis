@@ -13,6 +13,7 @@
  */
 import type { SignedGrant, BankingFunction } from "../t3/delegation";
 import type { LenderOffer } from "../t3/banking";
+import type { DisclosureAssertions } from "../t3/profile";
 import { openSession, type T3Session } from "../t3/client";
 import { loadAgentIdentity, type AgentIdentity } from "./identity";
 
@@ -119,6 +120,8 @@ export interface AgentContext {
   // ── mutable run state ────────────────────────────────────────────────
   consent: ConsentGrant | null;
   stepUp: StepUpApproval | null;
+  /** The most recent disclosure proof — reused when querying/accepting with lenders. */
+  lastProof: { proofRef: string; assertions: DisclosureAssertions } | null;
   lastOffers: LenderOffer[];
   trace: AgentTraceEntry[];
 
@@ -177,6 +180,7 @@ export async function createAgentContext(
     nowSecs: opts.nowSecs ?? (() => Math.floor(Date.now() / 1000)),
     consent: null,
     stepUp: null,
+    lastProof: null,
     lastOffers: [],
     trace: [],
     allowStubFallback: opts.allowStubFallback ?? true,
