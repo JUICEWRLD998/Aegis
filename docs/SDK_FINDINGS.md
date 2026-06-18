@@ -127,6 +127,25 @@ Gotchas baked into the adapter:
   `GET /api/contracts/current?name=tee:delegation/contracts` (returns `2.0.1`).
 - Testnet node URL: `https://cn-api.sg.testnet.t3n.terminal3.io`.
 
+## 3e. PHASE 2 — verified data + disclosure (2026-06-18)
+
+The org-data vault is the production home for verified financial data, but the
+testnet endpoint is unstable/incomplete (BUG-CAND-E: intermittent `fetch failed`;
+BUG-CAND-F: `createPolicy` doesn't initialise an individual's policy →
+`OrgPolicyNotInitialised` on `setWriters`). KYC also not provisioned
+(`kycStatus` → `precondition_failed: create-kyc-provider-session` first).
+
+Decision: model the privacy boundary in code so the agent never sees raw PII,
+independent of org-data uptime:
+- `src/t3/vault.ts` — org-data adapter (createPolicy/setWriters/writeData/dataGet)
+  with `withRetry` for the fetch-failed flakiness. Ready to light up when stable.
+- `src/t3/profile.ts` — the boundary: `VerifiedFinancialProfile` (confidential,
+  TEE-side only) vs `DisclosureAssertions` (coarse booleans/bands the agent may
+  learn). `getDisclosureAssertions()` is the ONLY agent-facing call; raw figures
+  never cross it. Falls back to a seeded verified profile if the vault is down.
+- Confirmed: getUsage credits drop with real actions (20000 → 19858 after the
+  delegation round-trips), so metering is live and accurate.
+
 ## 4. Agent Auth = the delegation grant (the core SDK story for the 40%)
 
 Outbound HTTP egress is authorized **per-call from the calling user's grant**, NOT

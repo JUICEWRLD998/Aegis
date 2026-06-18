@@ -89,6 +89,44 @@
   scriptVersion). Workaround in our code: pass `baseUrl: getNodeUrl()` +
   `scriptVersion` from `GET /api/contracts/current`. Status: REPRODUCED.
 
+### BUG-CAND-E — Org-data RPC path intermittently returns "fetch failed"
+- Component: sdk (`SessionOrgDataClient` via `createOrgDataClientFromSession`)
+- SDK version: 3.8.0 | Env: testnet (cn-api.sg.testnet.t3n.terminal3.io), Node v24, Win11
+- Severity: med-high (blocks the verified-data layer intermittently)
+- Observed: in a SINGLE authenticated session, `getUsage()` succeeds reliably but
+  `policyGet`/`createPolicy`/`setWriters`/`writeData` frequently throw `fetch failed`
+  at the network layer — then the SAME call succeeds on retry. So it's not auth,
+  not the DID, not general connectivity (getUsage shares the transport). Earlier
+  runs reached the server (returned `NotScopeWriter`, `OrgPolicyNotInitialised`),
+  proving the endpoint exists but is unstable.
+- Expected: org-data RPC calls as reliable as `token.get-usage`.
+- Why code change: investigate the org-data execute transport (timeouts / keepalive
+  / endpoint) — a core data API shouldn't need client-side retry to be usable.
+- Repro: `scripts/probe-stability.ts` (getUsage OK + org-data fetch-failed in one
+  run); `scripts/vault-roundtrip.ts`. Workaround: `withRetry` in `src/t3/vault.ts`.
+  Status: REPRODUCED (intermittent).
+
+### BUG-CAND-F — `createPolicy` succeeds but policy stays uninitialised
+- Component: sdk / node (`OrgDataClient.createPolicy`)
+- SDK version: 3.8.0 | Env: testnet
+- Severity: high (verified-data writes are impossible)
+- Observed: `createPolicy({ orgDid: <myDid>, initialAdminDid: <myDid> })` returns
+  without a thrown error (after retry past the fetch-failed flakiness), but the
+  immediately-following `setWriters({ orgDid: <myDid>, scope, writers:[<myDid>] })`
+  rejects with `OrgPolicyNotInitialised: org policy is not initialised for this
+  organisation`. So policy creation does not actually initialise the org policy for
+  a self-owned (individual) org DID — leaving the entire write path
+  (setWriters → writeData) unreachable.
+- Expected: after a successful `createPolicy`, `policyGet` returns the policy and
+  `setWriters` works; OR a clear error/precondition is documented (e.g. an org must
+  be provisioned out-of-band, individual DIDs can't self-init a policy).
+- Why code change: createPolicy must actually persist/initialise the policy, or the
+  precondition must be enforced + documented.
+- Repro: `scripts/vault-roundtrip.ts` → createPolicy (ok) then setWriters
+  (OrgPolicyNotInitialised). `scripts/probe-policy.ts`. Status: REPRODUCED.
+  NOTE: confirm createPolicy isn't silently failing under the fetch-failed flakiness
+  before final classification (run when the node is responsive).
+
 ## Candidates to probe during build (not yet reproduced — DO NOT submit unverified)
 - [ ] Placeholder resolution edge cases: missing profile field →
       `PlaceholderUnknown`; does it fail safely or leak the marker downstream?
