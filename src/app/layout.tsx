@@ -1,5 +1,6 @@
-/** Root layout — minimal shell for the Aegis app (chat UI lands in Phase 5). */
+/** Root layout — shell for the Aegis app. */
 import type { ReactNode } from "react";
+import "./globals.css";
 
 export const metadata = {
   title: "Aegis — Verifiable Agentic Private Banker",
