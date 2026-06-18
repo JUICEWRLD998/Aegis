@@ -88,6 +88,45 @@ Net effect on plan: the "Revoke" demo is now **in-app and per-function**, and ou
 delegation story is far richer (sign credential → agent signs invocation → scoped
 + time-boxed → revoke subset). This is a big win for the 40% integration score.
 
+## 3c. LIVE TESTNET RUN (2026-06-18) — validated against real infra
+
+`npm run t3:smoke` passed against testnet. Confirmed live:
+- `handshake()` + `authenticate(createEthAuthInput(addr))` works end to end.
+- Our agent identity DID: `did:t3n:8e3547bce411fd4f51fe1f25df033d83acccc869`
+  (address `0x01475095f3db45c92ec0995af13302b86bb2abb1`).
+- `getUsage()` → **20,000** credits available.
+- `getAuditEvents()` returns a valid (empty) page — API works.
+- ⚠️ `authenticate()` returns a **Did OBJECT** `{ value: "did:t3n:…", toString }`
+  at runtime, not a plain string. Adapter now normalizes via `normalizeDid()`.
+  → doc/type clarity gap (BUG-candidate, see BUGS.md).
+- ⚠️ `client.tenant.me()` returned `undefined` (not an error, not a record).
+  Hypothesis: must `client.tenant.claim()` to register as a tenant first. Confirm
+  in Phase 1 — affects contract deploy (need a tenant DID to own `z:<tid>:…`).
+
+## 3d. DELEGATION ROUND-TRIP — PROVEN LIVE (2026-06-18)
+
+`scripts/delegation-roundtrip.ts` passes end to end on testnet. This is the 40%
+core, de-risked on Day 1:
+- ✅ Agent identity = 33-byte compressed secp256k1 pubkey (via `@noble/curves`
+  `secp256k1.getPublicKey(sk, true)`; v2 API → import `@noble/curves/secp256k1.js`,
+  `utils.randomSecretKey()`).
+- ✅ `buildDelegationCredential` with scopes `["amount<=20000"]`, metadata, and a
+  `not_before/not_after` 24h window. `validateCredentialBody` passes.
+- ✅ `canonicaliseCredential` → `signCredential(jcs, userKeyBytes)` → recovered
+  signer address **exactly equals** the user's wallet (`0x0147…abb1`). Proof the
+  user authorized THIS agent for THESE functions.
+- ✅ `revokeDelegation` PER-FUNCTION: revoked only `submit-application`, kept
+  `query-lenders` → `{revokedFunctions:["submit-application"]}`. THE demo beat.
+- ✅ `revokeDelegation` WHOLE: `{revokedFunctions:null}`.
+
+Gotchas baked into the adapter:
+- `contract` field max length = 46 (BUG-CAND-C). Canonical `z:<tid>:<tail>` doesn't
+  fit; used short logical id `tee:banking`. Mapping to deployed script TBD on testnet.
+- `revokeDelegation` default version-resolution is broken (BUG-CAND-D); we pass
+  `baseUrl: getNodeUrl()` + `scriptVersion` from
+  `GET /api/contracts/current?name=tee:delegation/contracts` (returns `2.0.1`).
+- Testnet node URL: `https://cn-api.sg.testnet.t3n.terminal3.io`.
+
 ## 4. Agent Auth = the delegation grant (the core SDK story for the 40%)
 
 Outbound HTTP egress is authorized **per-call from the calling user's grant**, NOT

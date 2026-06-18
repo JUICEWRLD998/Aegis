@@ -74,11 +74,24 @@ export async function openSession(opts: {
   });
 
   await client.handshake();
-  // Confirmed against @terminal3/t3n-sdk@3.8.0 types: authenticate(authInput)
-  // resolves to the principal's Did (the session DID, resolved server-side).
-  const did: string = await client.authenticate(sdk.createEthAuthInput(address));
+  // Confirmed against @terminal3/t3n-sdk@3.8.0 + live testnet: authenticate()
+  // resolves to a Did, which at runtime is an object { value: string, toString }
+  // (NOT a plain string, despite the docs). Normalize to the canonical string.
+  const didRaw = await client.authenticate(sdk.createEthAuthInput(address));
+  const did: string = normalizeDid(didRaw);
 
   return { client, did, address };
+}
+
+/** Coerce the SDK's Did (object { value, toString } at runtime) to a string. */
+export function normalizeDid(did: unknown): string {
+  if (typeof did === "string") return did;
+  if (did && typeof did === "object") {
+    const v = (did as { value?: unknown }).value;
+    if (typeof v === "string") return v;
+    return String(did);
+  }
+  return String(did);
 }
 
 /**

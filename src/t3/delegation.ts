@@ -101,10 +101,30 @@ export async function revokeGrant(
   functions?: BankingFunction[],
 ): Promise<{ vcId: string; revokedFunctions: string[] | null }> {
   const sdk = await loadSdk();
+  // NOTE: revokeDelegation's default version-resolution is broken (BUG-CAND-D):
+  // it builds a relative URL and fails. We pass baseUrl + an explicitly resolved
+  // version so revoke works reliably. Proven in scripts/delegation-roundtrip.ts.
+  const baseUrl: string = sdk.getNodeUrl();
+  const scriptVersion = await resolveDelegationVersion(baseUrl);
+
   const res = await sdk.revokeDelegation({
     credentialJcsB64u: grant.credentialJcsB64u,
     revokedFunctions: functions ? [...functions].sort() : undefined,
     client: session.client,
+    baseUrl,
+    scriptVersion,
   });
   return { vcId: res.vcId, revokedFunctions: res.revokedFunctions };
+}
+
+/** Resolve the live tee:delegation contract version (workaround for BUG-CAND-D). */
+async function resolveDelegationVersion(baseUrl: string): Promise<string> {
+  const url =
+    `${baseUrl}/api/contracts/current?name=` +
+    encodeURIComponent("tee:delegation/contracts");
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`delegation version lookup failed: HTTP ${r.status}`);
+  const j = (await r.json()) as { current_version?: string };
+  if (!j.current_version) throw new Error("no current_version in lookup response");
+  return j.current_version;
 }

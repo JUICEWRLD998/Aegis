@@ -127,12 +127,24 @@ We will produce a one-page table in the final README mapping each SDK primitive 
 > Reality check: ~4 days. Each day ends with a **working, demoable increment**. If we fall behind, we cut from the bottom of the "Stretch" lists, never from the hero flow.
 
 ### Day 1 — June 18 (today) → Foundation & Identity
-**Phase 0 — Setup & recon**
-- [ ] Claim sandbox test tokens from the T3 tokens claim page.
-- [ ] Read the **entire** Agent Dev Kit / Agent Auth SDK docs. Build the SDK Integration Map (§4) with *real* primitive names.
-- [ ] **Start `BUGS.md` and `DOCS-GAPS.md` immediately** (see §7 — we capture issues from minute one, not at the end).
-- [ ] Scaffold the Next.js TS app; wire OpenRouter + Gemini with a trivial "hello tool-call" loop.
-- [ ] Create the `t3/` SDK adapter module (thin wrappers, typed).
+**Phase 0 — Setup & recon ✅ COMPLETE (2026-06-18)**
+- [x] Claim sandbox test tokens — DONE. 20,000 credits live; agent DID
+      `did:t3n:8e3547bce411fd4f51fe1f25df033d83acccc869`.
+- [x] Read docs + **read the real `@terminal3/t3n-sdk@3.8.0` type defs** (ground
+      truth). Architecture corrected → see `docs/SDK_FINDINGS.md`. Every pitch
+      pillar maps to a confirmed primitive (delegation, audit, placeholders).
+- [x] `BUGS.md` / `DOCS-GAPS.md` started — already 5 confirmed doc gaps + 2 live
+      observations. Corrected my own mis-framed gaps after reading real types.
+- [x] Scaffold Next.js TS app + OpenRouter/Gemini client (`src/agent/openrouter.ts`).
+- [x] T3 adapter built + typechecking clean: `client.ts`, `delegation.ts`,
+      `audit.ts`, `banking.ts`. Rust TEE contract skeleton in `contract/`.
+- [x] **Live validation:** `npm run t3:smoke` passes — handshake + authenticate +
+      getUsage + getAuditEvents all confirmed against testnet.
+
+> Architecture note (from recon): T3 = Rust→WASM TEE contract + TypeScript invoke
+> client. PII resolved inside the enclave via `{{profile.*}}` placeholders — it
+> never touches the agent or the LLM. Delegation is fully programmatic and
+> per-function revocable. This is STRONGER than the original assumption.
 
 **Phase 1 — Identity & delegation foundation**
 - [ ] Issue/obtain an **agent identity**; verify it round-trips.
