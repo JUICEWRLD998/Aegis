@@ -178,9 +178,33 @@ We will produce a one-page table in the final README mapping each SDK primitive 
       `contract/src/lenders.rs`) until the TEE contract is deployed in Phase 4.
 
 ### Day 3 — June 21 → Banks, transactions, UI
-**Phase 4 — Mock lenders + transactions**
-- [ ] 3 lender API routes that **genuinely verify** agent identity + proof, then return differentiated offers.
-- [ ] **Transaction authorization** for loan acceptance + **step-up** human approval modal.
+**Phase 4 — Mock lenders + transactions ✅ COMPLETE (2026-06-18)**
+- [x] 3 lender endpoints that **genuinely verify** (no mocks) — `src/lenders/`:
+      `verify.ts` checks (1) no PII (`assertNoPii`), (2) the readable credential
+      re-canonicalises to the **signed JCS bytes** + `validateCredentialBody`,
+      (3) the user's wallet recovered via `ethRecoverEip191`, (4) function/validity-
+      window/amount-scope authority, (5) the **agent identity** bound to this exact
+      request via `secp256k1.verify(agent_sig, sha256(buildInvocationPreimage(...)))`
+      against the credential's `agent_pubkey`. Differentiated offers in `catalog.ts`
+      (Aurora prime / Meridian near-prime / Northwind specialist), priced purely from
+      the coarse disclosure assertions.
+- [x] Exposed as Next.js routes `POST /api/lenders/[lender]/{quote,accept}` (thin
+      shells over `handler.ts`); agent reaches them via `src/lenders/client.ts`
+      (in-process by default, HTTP when `LENDER_BASE_URL` is set).
+- [x] **Transaction authorization** for acceptance: `execute_acceptance` builds a
+      signed `submit-application` request (`src/agent/lenderRequest.ts`,
+      `signAgentInvocation`) the lender re-verifies; gated by the existing human
+      step-up. Agent tools (`query_lenders`/`execute_acceptance`) now route through
+      the verifying lenders, not the stub.
+- [x] Minimal Next.js app scaffolded (`src/app/`, `next.config.mjs`).
+- **Proof:** `npm run lenders:demo` — valid signed request → 3 differentiated offers
+      (7.3% / 8.2% / 10.1% APR), agent cryptographically authorized + user wallet
+      recovered; forged agent sig / expired / over-scope / PII-in-body → all rejected;
+      acceptance → verified reference; no PII on the wire. `npm run agent:demo` now runs
+      the full hero flow against the verifying lenders. **PASSED** (typecheck clean).
+- Note: real on-chain tx signing via the deployed TEE contract remains blocked by the
+      Rust toolchain; the signed-invocation-verified-by-lender path is the demonstrated
+      transaction authorization (the step-up modal UI lands in Phase 5).
 
 **Phase 5 — Frontend & demo polish**
 - [ ] Polished chat UI; consent screen; step-up modal; **live audit-trail panel**; a visible "Revoke authority" control.

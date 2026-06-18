@@ -143,10 +143,13 @@ export function verifyLenderRequest(
         hexToBytes(req.nonce_hex),
         reqHash,
       );
-      // signAgentInvocation signs raw compact ECDSA over sha256(preimage).
+      // signAgentInvocation signs over sha256(preimage); noble's secp256k1 defaults
+      // to prehash:true, so we pass the raw preimage and let verify hash it (passing
+      // sha256(preimage) here would double-hash and always fail — confirmed via
+      // scripts/probe-crypto.ts).
       const valid = secp256k1.verify(
         hexToBytes(req.agent_sig_hex),
-        sha256(preimage),
+        preimage,
         hexToBytes(c.agent_pubkey_hex),
       );
       if (valid) agentAuthorized = true;

@@ -172,6 +172,46 @@ Observations:
   build+sign is local crypto; only revoke/execute hit the ledger). Expect events
   once contract invokes land in Phase 4.
 
+## 3g. PHASE 4 — mock lenders + transaction authorization (2026-06-18)
+
+Built `src/lenders/` (catalog/verify/handler/client/wire) + thin Next routes
+(`src/app/api/lenders/[lender]/{quote,accept}/route.ts`) + agent-side signer
+(`src/agent/lenderRequest.ts`). Lenders verify GENUINELY, reusing real SDK crypto.
+
+Confirmed SDK surface used (from `index.d.ts`, ground truth):
+- `buildInvocationPreimage(vcId, nonce, reqHash)` → `utf8(DELEGATION_INVOCATION_DOMAIN)
+  || vc_id || nonce || request_hash`; doc states **SHA-256 of these bytes is what the
+  agent sig is verified against**.
+- `signAgentInvocation(preimage, secret)` → **raw compact ECDSA (64 bytes) over
+  sha256(preimage)**. ⚠️ GOTCHA (proven via `scripts/probe-crypto.ts`): noble v2
+  secp256k1 **defaults to prehash:TRUE**, so the lender verifies with
+  `secp256k1.verify(sig, preimage, agent_pubkey)` — pass the RAW preimage and let noble
+  hash it. Passing `sha256(preimage)` double-hashes and always fails. (`verify(sig,
+  sha256(preimage)) → false`, `verify(sig, preimage) → true`.)
+- `ethRecoverEip191(msg, sig)` → recovers the 20-byte signer of an EIP-191 message;
+  used to recover the user wallet that signed the credential JCS.
+- `DelegationEnvelope` = `{ credential_jcs, user_sig, agent_sig, nonce, request_hash }`
+  — our wire format mirrors it (JSON: bytes→hex, bigint window→string).
+- Integrity trick: the lender reconstructs the credential from the readable wire
+  fields via `buildDelegationCredential` → `canonicaliseCredential` and asserts the
+  bytes equal `b64uDecodeStrict(credential_jcs_b64u)`. So the human-readable
+  functions/window/scope are provably the ones the user signed — no guessing at the
+  SDK's internal byte encoding.
+- `canonicaliseRequest`/`requestHash` are typed ONLY for `PayrollRunRequest`, so the
+  banking request body uses our own stable `canonicalJson` (sorted keys) hashed with
+  `@noble/hashes/sha2` `sha256`. Both sides share `src/lenders/wire.ts`.
+
+did↔address: `ethRecoverEip191` yields the signer's address; `did:t3n:<40hex>` is NOT
+that address (recon: did `8e35…` vs addr `0147…`), so the lender surfaces the recovered
+signer address rather than asserting did equality. Authority is still fully proven (a
+real wallet signed exactly this scoped grant naming exactly this agent key).
+
+✅ STATUS: PASSED. `npm run typecheck` clean; `npm run lenders:demo` → 3 differentiated
+offers (7.3/8.2/10.1% APR), agent authorized + user wallet `0x0147…abb1` recovered, and
+forged-sig / expired / over-scope / PII-in-body all rejected; `npm run agent:demo` runs
+the full hero flow against the verifying lenders with the PII guardrail intact. The one
+real bug found + fixed during the run: the prehash:true gotcha above.
+
 ## 4. Agent Auth = the delegation grant (the core SDK story for the 40%)
 
 Outbound HTTP egress is authorized **per-call from the calling user's grant**, NOT
