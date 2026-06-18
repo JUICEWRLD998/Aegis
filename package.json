@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "t3:smoke": "tsx scripts/t3-smoke.ts"
+    "t3:smoke": "tsx scripts/t3-smoke.ts",
+    "agent:demo": "node --env-file=.env --import tsx scripts/agent-demo.ts"
   },
   "dependencies": {
     "@terminal3/t3n-sdk": "^3.8.0",

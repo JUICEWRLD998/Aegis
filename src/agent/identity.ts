@@ -41,8 +41,11 @@ function toHex(b: Uint8Array): string {
  * random key when none is configured.
  */
 export function loadAgentIdentity(opts: { keyHex?: string } = {}): AgentIdentity {
-  const keyHex = opts.keyHex ?? process.env.AGENT_KEY;
-  const privateKey = keyHex ? hexToBytes(keyHex) : secp256k1.utils.randomSecretKey();
+  const raw = (opts.keyHex ?? process.env.AGENT_KEY ?? "").trim().replace(/^0x/i, "");
+  // Only treat it as a key if it's a well-formed 32-byte hex secret; otherwise
+  // (empty, a stray CR, a placeholder) mint a fresh random identity.
+  const isValid = raw.length === 64 && /^[0-9a-f]+$/i.test(raw);
+  const privateKey = isValid ? hexToBytes(raw) : secp256k1.utils.randomSecretKey();
   const pubkey = secp256k1.getPublicKey(privateKey, true); // compressed, 33 bytes
   return { privateKey, pubkey, pubkeyHex: toHex(pubkey) };
 }

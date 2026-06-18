@@ -146,6 +146,32 @@ independent of org-data uptime:
 - Confirmed: getUsage credits drop with real actions (20000 → 19858 after the
   delegation round-trips), so metering is live and accurate.
 
+## 3f. PHASE 3 — agent orchestration (2026-06-18)
+
+The Gemini tool-loop is live (`npm run agent:demo`, passed on testnet). Structure:
+- `src/agent/identity.ts` — agent = secp256k1 keypair; pubkey is its verifiable
+  identity inside the credential. Robust to unset/placeholder `AGENT_KEY` (mints
+  a random identity rather than crashing on a stray CR).
+- `src/agent/context.ts` — `AgentContext` (session + identity + consent/step-up
+  state + trace) and the `Approver` seam (human-in-the-loop; AutoApprover for
+  headless). `createScopedGrant` is first exercised here (was unused before).
+- `src/agent/tools.ts` — 8 SDK-backed tools; authority (consent expiry/revocation/
+  per-function scope/amount cap) + step-up enforced in the tool layer.
+- `src/agent/guardrail.ts` — `assertNoPii` runs on every tool result before it
+  re-enters the LLM conversation. Defense-in-depth on top of safe-by-design handlers.
+- `src/agent/runtime.ts` — the loop; system prompt encodes the discipline
+  (consent first → proof → query → compare → step-up → accept → audit).
+
+Observations:
+- `createScopedGrant` works against `buildDelegationCredential` once
+  `not_before_secs`/`not_after_secs` are coerced to **BigInt** (the SDK rejects
+  plain numbers; the proven roundtrip used BigInt). Fixed in `delegation.ts`.
+- query/submit fall back to deterministic stub offers when the banking contract
+  isn't deployed yet — keeps the agent loop demoable before Phase 4 deploy.
+- `getAuditEvents()` returns an empty page for self-calls so far (delegation
+  build+sign is local crypto; only revoke/execute hit the ledger). Expect events
+  once contract invokes land in Phase 4.
+
 ## 4. Agent Auth = the delegation grant (the core SDK story for the 40%)
 
 Outbound HTTP egress is authorized **per-call from the calling user's grant**, NOT

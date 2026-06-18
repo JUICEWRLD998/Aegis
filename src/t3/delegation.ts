@@ -71,8 +71,10 @@ export async function createScopedGrant(
     functions,
     scopes: params.scopes,
     metadata: params.metadata,
-    not_before_secs: params.nowSecs,
-    not_after_secs: params.nowSecs + params.validForSecs,
+    // The SDK expects BigInt second-counts (proven in scripts/delegation-roundtrip.ts);
+    // the public API stays number-typed for ergonomics and coerces here.
+    not_before_secs: BigInt(params.nowSecs),
+    not_after_secs: BigInt(params.nowSecs + params.validForSecs),
     vc_id: params.vcId,
   });
 

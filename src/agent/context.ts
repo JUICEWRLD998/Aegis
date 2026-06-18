@@ -161,7 +161,10 @@ export async function createAgentContext(
 
   const session = await openSession({ key: userKey });
   const agent = loadAgentIdentity({ keyHex: opts.agentKey });
-  const tenantDid = opts.tenantDid ?? process.env.TENANT_DID ?? session.did;
+  const envTenant = (opts.tenantDid ?? process.env.TENANT_DID ?? "").trim();
+  // Fall back to the user DID when no real tenant is configured (testnet: we own
+  // the contract we test against). Guards against a blank/placeholder TENANT_DID.
+  const tenantDid = envTenant.startsWith("did:t3n:") ? envTenant : session.did;
 
   return {
     session,

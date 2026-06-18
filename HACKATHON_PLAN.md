@@ -157,10 +157,25 @@ We will produce a one-page table in the final README mapping each SDK primitive 
 - [ ] Read credentials from the **TEE vault** via SDK.
 - [ ] Generate **selective-disclosure proofs** ("income ≥ X", "no defaults"). Confirm raw data never crosses the boundary.
 
-**Phase 3 — Agent orchestration**
-- [ ] Build the Gemini tool-loop. Tools (each SDK-backed): `request_consent`, `read_verified_profile`, `make_disclosure_proof`, `query_lenders`, `compare_offers`, `request_step_up`, `execute_acceptance`, `get_audit_log`.
-- [ ] Strict guardrail: LLM context **never** contains raw PII — only proof handles + derived facts.
-- **EOD demo:** agent reasons end-to-end and produces disclosure proofs from a natural-language request.
+**Phase 3 — Agent orchestration ✅ COMPLETE (2026-06-18)**
+- [x] Built the Gemini tool-loop (`src/agent/runtime.ts`). All 8 tools wired,
+      each SDK-backed (`src/agent/tools.ts`): `request_consent`,
+      `read_verified_profile`, `make_disclosure_proof`, `query_lenders`,
+      `compare_offers`, `request_step_up`, `execute_acceptance`, `get_audit_log`.
+- [x] Strict guardrail enforced (`src/agent/guardrail.ts`): every tool result is
+      run through `assertNoPii` before re-entering the conversation — the model
+      *cannot* receive raw PII by construction. Authority (consent existence,
+      expiry, revocation, per-function scope, amount cap) + human step-up enforced
+      in the tool layer, not just the UI.
+- [x] Human-in-the-loop modelled as a swappable `Approver` seam (AutoApprover for
+      headless; web modals later). Agent identity = secp256k1 pubkey
+      (`src/agent/identity.ts`), named inside the signed delegation credential.
+- **EOD demo:** `npm run agent:demo` — agent reasons end-to-end from a NL request,
+      produces real disclosure proofs + a user-signed scoped delegation, runs the
+      full consent→proof→offers→step-up→accept→audit flow. Guardrail self-check
+      confirms zero PII in the LLM context. **PASSED live on testnet.**
+- Note: banking tools fall back to deterministic stub offers (mirroring
+      `contract/src/lenders.rs`) until the TEE contract is deployed in Phase 4.
 
 ### Day 3 — June 21 → Banks, transactions, UI
 **Phase 4 — Mock lenders + transactions**
