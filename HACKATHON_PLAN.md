@@ -206,10 +206,27 @@ We will produce a one-page table in the final README mapping each SDK primitive 
       Rust toolchain; the signed-invocation-verified-by-lender path is the demonstrated
       transaction authorization (the step-up modal UI lands in Phase 5).
 
-**Phase 5 — Frontend & demo polish**
-- [ ] Polished chat UI; consent screen; step-up modal; **live audit-trail panel**; a visible "Revoke authority" control.
-- [ ] Script and dry-run the **golden-path demo**.
-- **EOD demo:** full hero flow works in the browser, start to finish.
+**Phase 5 — Frontend & demo polish ✅ COMPLETE (2026-06-18)**
+- [x] Polished chat UI (`src/app/page.tsx` + `globals.css`, dark fintech theme):
+      chat panel, **consent screen** (scoped grant modal), **step-up modal**,
+      **live audit-trail panel** with per-action verification badges (✓ agent
+      identity verified / ✓ no PII sent), and **Revoke authority** controls
+      (all-functions + per-function "revoke acceptance only").
+- [x] Server stack bridging the agent's human-in-the-loop seam to the browser
+      (`src/server/sessions.ts` + `events.ts`): in-memory session store
+      (globalThis-backed singleton), `DeferredApprover` that turns consent/step-up
+      requests into SSE `approval_required` events + a promise the loop awaits until
+      the client POSTs a decision. Routes: `POST /api/session`,
+      `GET /api/session/[id]/events` (SSE), `POST /api/chat`,
+      `POST /api/session/[id]/approve`, `POST /api/session/[id]/revoke`.
+- [x] **Revoke is real:** marks the local grant revoked instantly (next tool call
+      denied) AND best-effort revokes on-chain (live testnet `revokeDelegation`
+      confirmed returning a vcId in the e2e).
+- [x] Golden-path demo runbook: `docs/DEMO.md`.
+- **EOD demo:** full hero flow works in the browser. Verified headlessly by
+      `npm run ui-e2e` (drives session→SSE→consent→proof→lenders→step-up→accept→
+      audit→revoke and asserts every beat). **PASSED** (typecheck clean; dev server
+      clean, all routes 200).
 
 ### Day 4 — June 22 → Harden, autonomy, SUBMIT (deadline 11:59 PM GMT+8)
 **Phase 6 — Hardening & edge cases**

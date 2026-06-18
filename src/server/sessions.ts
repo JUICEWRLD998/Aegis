@@ -34,7 +34,11 @@ interface Session {
   busy: boolean;
 }
 
-const sessions = new Map<string, Session>();
+// Back the store with globalThis: Next.js bundles each route separately in dev (and
+// HMR re-evaluates modules), so a plain module-level Map would NOT be shared across
+// /api/session, /api/chat, /api/.../events, etc. globalThis gives one true singleton.
+const globalStore = globalThis as unknown as { __aegisSessions?: Map<string, Session> };
+const sessions: Map<string, Session> = (globalStore.__aegisSessions ??= new Map<string, Session>());
 
 function emit(s: Session, e: ServerEvent): void {
   s.events.push(e);
