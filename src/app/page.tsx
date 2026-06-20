@@ -21,6 +21,7 @@ interface ConsentState {
 const SUGGESTIONS = [
   "Get me the best personal loan, up to $20,000 over 36 months.",
   "Find me a $10k loan over 24 months and accept the cheapest.",
+  "Find me a personal loan of $15,000 over 48 months and show me the options.",
 ];
 
 const TOOL_LABELS: Record<string, string> = {
@@ -192,6 +193,8 @@ export default function Home() {
 
   const consentLive = consent?.status === "granted";
   const d = (consent?.detail ?? {}) as Record<string, unknown>;
+  const revokedFns = Array.isArray(d.revoked_functions) ? (d.revoked_functions as string[]) : [];
+  const acceptanceRevoked = revokedFns.includes("submit-application");
 
   return (
     <div className="app">
@@ -255,17 +258,24 @@ export default function Home() {
           <div className="sec-head"><h3>Authority</h3></div>
           <div className="authority">
             <span className={`badge ${consent?.status ?? "none"}`}>
-              {consent?.status === "granted" ? "● Active delegation" : consent?.status === "revoked" ? "● Revoked" : "○ No authority granted"}
+              {consent?.status === "granted"
+                ? acceptanceRevoked ? "● Active — querying only" : "● Active delegation"
+                : consent?.status === "revoked" ? "● Revoked" : "○ No authority granted"}
             </span>
             {consentLive && (
               <>
                 <div className="kv"><span className="k">Loan cap</span><span className="v">{money(d.max_loan_amount)}</span></div>
                 <div className="kv"><span className="k">Lenders</span><span className="v">≤ {String(d.max_lenders ?? "—")}</span></div>
                 <div className="kv"><span className="k">Functions</span><span className="v mono">{Array.isArray(d.functions) ? (d.functions as string[]).join(", ") : "—"}</span></div>
+                {revokedFns.length > 0 && (
+                  <div className="kv"><span className="k">Revoked</span><span className="v mono revoked-fn">{revokedFns.join(", ")}</span></div>
+                )}
                 <div className="kv"><span className="k">Consent id</span><span className="v mono">{String(d.consent_id ?? "").slice(0, 12)}…</span></div>
                 <div className="revoke-row">
                   <button className="revoke" onClick={() => revoke()}>Revoke authority</button>
-                  <button className="revoke ghost" onClick={() => revoke(["submit-application"])}>Revoke acceptance only</button>
+                  {!acceptanceRevoked && (
+                    <button className="revoke ghost" onClick={() => revoke(["submit-application"])}>Revoke acceptance only</button>
+                  )}
                 </div>
               </>
             )}

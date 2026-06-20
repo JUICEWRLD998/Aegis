@@ -162,8 +162,9 @@ export async function revoke(
   const c = s.ctx.consent;
   if (!c) return { revoked: false, reason: "no_active_consent" };
 
-  if (functions && functions.length) {
-    c.revokedFunctions = Array.from(new Set([...c.revokedFunctions, ...functions]));
+  const partial = !!(functions && functions.length);
+  if (partial) {
+    c.revokedFunctions = Array.from(new Set([...c.revokedFunctions, ...functions!]));
   } else {
     c.revoked = true;
   }
@@ -174,6 +175,27 @@ export async function revoke(
   } catch (e) {
     live = { error: (e as Error).message }; // local revoke already took effect
   }
-  emit(s, { type: "consent", status: "revoked", detail: { functions: functions ?? "all", live } });
+
+  // A per-function revoke (e.g. "revoke acceptance only") leaves the delegation
+  // ACTIVE — the agent can still call the functions it keeps. Re-emit the grant as
+  // still-granted, with the now-revoked functions surfaced, so the UI doesn't flip
+  // to the full "Revoked" state. A full revoke (no functions) kills everything.
+  if (partial) {
+    const remaining = c.functions.filter((f) => !c.revokedFunctions.includes(f));
+    emit(s, {
+      type: "consent",
+      status: "granted",
+      detail: {
+        consent_id: c.consentId,
+        max_loan_amount: c.maxLoanAmount,
+        max_lenders: c.maxLenders,
+        functions: remaining,
+        revoked_functions: c.revokedFunctions,
+        live,
+      },
+    });
+  } else {
+    emit(s, { type: "consent", status: "revoked", detail: { functions: "all", live } });
+  }
   return { revoked: true, live };
 }

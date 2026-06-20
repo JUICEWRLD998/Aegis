@@ -1,142 +1,208 @@
-# Bug Reports — Terminal 3 ADK
+# Terminal 3 SDK — Bug Reports
 
-> Running log for the Bug Discovery Bounty (bugs track).
-> Rules: SDK-related, in-scope, actionable, verifiable, **must include a
-> reproduction**, and must require a code change to fix. First valid report wins
-> duplicates. Out of scope: scanner noise, physical-access bugs, outdated-OSS CVEs.
-> VALIDATE EVERY CLAIM BY REPRODUCING before submitting — low-effort AI reports get
-> ignored / may cause suspension.
+**Reporter:** fadhmusty@gmail.com
+**Package:** `@terminal3/t3n-sdk@3.8.0`
+**Environment:** Node v24.14.1, Windows 11. Testnet node `https://cn-api.sg.testnet.t3n.terminal3.io`.
 
-## Report template
-```
-### BUG-00X — <short title>
-- Component: <sdk / contract host / dashboard / cli>
-- SDK version: <x.y.z>
-- Environment: <testnet, Node vXX, OS>
-- Severity: <low / med / high>
-- Steps to reproduce:
-  1. ...
-- Expected:
-- Actual:
-- Why a code change is required:
-- Evidence: <logs / screenshots / minimal repro repo path>
-- Status: DRAFT | REPRODUCED | SUBMITTED
-```
+Every bug below reproduces with a single offline, deterministic command — no network
+and no API key required:
+
 
 ---
 
-## Observed on live testnet (2026-06-18) — verify framing before submitting
+## BUG-001 — `revokeDelegation()` default version resolution builds a relative URL and cannot revoke
 
-### BUG-CAND-A — `authenticate()` resolves to a Did object, typed/doc'd as string
-- Component: sdk (`T3nClient.authenticate`)
-- SDK version: 3.8.0 | Env: testnet, Node v24.14.1, Windows 11
-- Observed: return value is `{ value: "did:t3n:…", toString: [Function] }`, not a
-  `string`. The `Did` type is exported but its runtime object shape isn't documented;
-  `console.log(did)` shows the wrapper, and `did === "did:t3n:…"` is false, so naive
-  string usage breaks (only works via template-literal `toString`).
-- Expected: a string DID (as docs examples imply), or documented `.value` accessor.
-- Why code change: either return/normalize a string, or document the object shape +
-  accessor so consumers don't silently mishandle it.
-- Repro: `scripts/t3-smoke.ts` step 2 output. Status: REPRODUCED (confirm it's not
-  intended/documented elsewhere before classifying bug vs doc-gap).
+- **Component:** `revokeDelegation` (delegation lifecycle)
+- **Severity:** High — revocation is a core safety primitive, and its default,
+  documented call shape is broken.
 
-### BUG-CAND-B — `tenant.me()` returns `undefined` for a fresh authenticated key
-- Observed: after successful auth (20k credits, valid DID), `client.tenant.me()`
-  resolves to `undefined` rather than a record or a clear "not a tenant / call
-  claim() first" signal.
-- Why it matters: ambiguous onboarding state; a dev can't tell if they failed, or
-  must `claim()` first. Verify whether `claim()` is the required precondition.
-- Repro: `scripts/t3-smoke.ts` step 4. Status: REPRODUCED — needs Phase-1 follow-up
-  (call `claim()` then `me()`); classify after.
+**Summary**
 
-### BUG-CAND-C — Delegation `contract` field max length (46) is shorter than a canonical tenant script name
-- Component: sdk (`buildDelegationCredential` / `validateCredentialBody`)
-- SDK version: 3.8.0 | Env: testnet, Node v24.14.1, Windows 11
-- Observed: `DelegationCredential.contract` rejects strings >46 chars with
-  `ContractTooLong`. But a canonical tenant contract script name is
-  `z:<tid>:<tail>` where `<tid>` is a 40-hex tenant id — the prefix `z:<40hex>:`
-  is already **43 chars**, leaving only **3 chars** for the tail. So you cannot put
-  a normal tenant script name (e.g. `z:<tid>:banking-contracts`, 60 chars) in a
-  delegation credential, even though that is exactly the contract an agent would be
-  delegated to invoke. Docs/examples only ever show short system ids (`tee:payroll`).
-- Expected: either the limit accommodates a full `z:<tid>:<tail>` script name, OR
-  the docs specify what the `contract` field must contain for a TENANT contract
-  (logical id vs script name) and how it maps to the deployed `z:<tid>:` script.
-- Why code change: raise the length bound to fit canonical script names, or
-  document/define the required short-id form + its resolution.
-- Repro: `buildDelegationCredential({ ..., contract: "x".repeat(47) })` throws
-  `ContractTooLong`; max accepted length is 46. `("z:"+"a".repeat(40)+":").length`
-  is 43. Status: REPRODUCED. (Verify on testnet what the host actually expects in
-  this field before final classification — bug vs missing-doc.)
+`revokeDelegation({ credentialJcsB64u, client })` — the natural call using the
+authenticated client and nothing else — throws
+`TypeError: Failed to parse URL from /api/contracts/current?name=tee%3Adelegation%2Fcontracts`.
+The SDK resolves the delegation-contract version by `fetch`-ing a **relative** URL
+instead of using the node URL the authenticated `client` already holds.
 
-### BUG-CAND-D — `revokeDelegation` auto version-resolution builds a relative URL / fails
-- Component: sdk (`revokeDelegation`)
-- SDK version: 3.8.0 | Env: testnet, Node v24.14.1, Windows 11
-- Severity: high (revocation is a core safety primitive; default path is broken)
-- Observed: calling `revokeDelegation({ credentialJcsB64u, client })` WITHOUT
-  `baseUrl`/`scriptVersion` throws `Failed to parse URL from
-  /api/contracts/current?name=tee%3Adelegation%2Fcontracts` — i.e. it constructs a
-  RELATIVE URL for the version lookup instead of using the client's configured node
-  base URL. Passing `baseUrl: getNodeUrl()` changes the failure to `fetch failed`,
-  even though a manual `GET <nodeUrl>/api/contracts/current?name=tee:delegation/contracts`
-  returns 200 `{"current_version":"2.0.1"}`. Only passing an explicit
-  `scriptVersion: "2.0.1"` (skipping auto-resolution) makes revoke succeed.
-- Expected: with an authenticated `client`, `revokeDelegation` should resolve the
-  delegation contract version against the client's own node URL with no extra args.
-- Why code change: the version-resolution path must use the client/session base URL
-  (absolute), not a relative path; default revoke must work without manual overrides.
-- Repro: `scripts/delegation-roundtrip.ts` steps 5–6 (with/without baseUrl &
-  scriptVersion). Workaround in our code: pass `baseUrl: getNodeUrl()` +
-  `scriptVersion` from `GET /api/contracts/current`. Status: REPRODUCED.
+**Steps to reproduce**
 
-### BUG-CAND-E — Org-data RPC path intermittently returns "fetch failed"
-- Component: sdk (`SessionOrgDataClient` via `createOrgDataClientFromSession`)
-- SDK version: 3.8.0 | Env: testnet (cn-api.sg.testnet.t3n.terminal3.io), Node v24, Win11
-- Severity: med-high (blocks the verified-data layer intermittently)
-- Observed: in a SINGLE authenticated session, `getUsage()` succeeds reliably but
-  `policyGet`/`createPolicy`/`setWriters`/`writeData` frequently throw `fetch failed`
-  at the network layer — then the SAME call succeeds on retry. So it's not auth,
-  not the DID, not general connectivity (getUsage shares the transport). Earlier
-  runs reached the server (returned `NotScopeWriter`, `OrgPolicyNotInitialised`),
-  proving the endpoint exists but is unstable.
-- Expected: org-data RPC calls as reliable as `token.get-usage`.
-- Why code change: investigate the org-data execute transport (timeouts / keepalive
-  / endpoint) — a core data API shouldn't need client-side retry to be usable.
-- Repro: `scripts/probe-stability.ts` (getUsage OK + org-data fetch-failed in one
-  run); `scripts/vault-roundtrip.ts`. Workaround: `withRetry` in `src/t3/vault.ts`.
-  Status: REPRODUCED (intermittent).
+```ts
+import * as sdk from "@terminal3/t3n-sdk";
+await sdk.revokeDelegation({ credentialJcsB64u: "AA", client: {} as never });
+// The failure occurs during version resolution, before the client is used,
+// so a stub client is sufficient to surface it.
+```
 
-### BUG-CAND-F — `createPolicy` succeeds but policy stays uninitialised
-- Component: sdk / node (`OrgDataClient.createPolicy`)
-- SDK version: 3.8.0 | Env: testnet
-- Severity: high (verified-data writes are impossible)
-- Observed: `createPolicy({ orgDid: <myDid>, initialAdminDid: <myDid> })` returns
-  without a thrown error (after retry past the fetch-failed flakiness), but the
-  immediately-following `setWriters({ orgDid: <myDid>, scope, writers:[<myDid>] })`
-  rejects with `OrgPolicyNotInitialised: org policy is not initialised for this
-  organisation`. So policy creation does not actually initialise the org policy for
-  a self-owned (individual) org DID — leaving the entire write path
-  (setWriters → writeData) unreachable.
-- Expected: after a successful `createPolicy`, `policyGet` returns the policy and
-  `setWriters` works; OR a clear error/precondition is documented (e.g. an org must
-  be provisioned out-of-band, individual DIDs can't self-init a policy).
-- Why code change: createPolicy must actually persist/initialise the policy, or the
-  precondition must be enforced + documented.
-- Repro: `scripts/vault-roundtrip.ts` → createPolicy (ok) then setWriters
-  (OrgPolicyNotInitialised). `scripts/probe-policy.ts`. Status: REPRODUCED.
-  NOTE: confirm createPolicy isn't silently failing under the fetch-failed flakiness
-  before final classification (run when the node is responsive).
+Or run `node --import tsx scripts/sdk-bugs.ts` (BUG 1).
 
-## Candidates to probe during build (not yet reproduced — DO NOT submit unverified)
-- [ ] Placeholder resolution edge cases: missing profile field →
-      `PlaceholderUnknown`; does it fail safely or leak the marker downstream?
-- [ ] `host/http.egress_denied` behavior: does the contract leak any partial PII to
-      logs before egress is denied? (privacy-critical)
-- [ ] `executeAndDecode` error surface when `script_version` is stale/mismatched.
-- [ ] `register` rejecting equal/lower version — exact error string + status code.
-- [ ] `getUsage()` balance accounting accuracy after failed vs succeeded actions.
-- [ ] Auth/handshake failure modes with malformed/expired API key.
-- [ ] KV map prefix enforcement: attempt cross-tenant read of `z:<other-tid>:…`.
+**Expected:** With an authenticated `client`, `revokeDelegation` resolves the
+`tee:delegation/contracts` version against the client's own node URL and revokes, with
+no extra arguments.
 
-> These are leads, not findings. Each becomes a BUG-00X only after we reproduce it
-> with a minimal, captured repro on live testnet.
+**Actual:** Throws `Failed to parse URL from /api/contracts/current?name=tee%3Adelegation%2Fcontracts`.
+Revocation only succeeds if the caller manually supplies **both** `baseUrl`
+(e.g. `getNodeUrl()`) **and** an explicit `scriptVersion`.
+
+**Root cause**
+
+```js
+// revokeDelegation:
+const base    = opts.baseUrl?.replace(/\/$/, "");
+const version = opts.scriptVersion
+    ?? await getScriptVersion(base ?? "", "tee:delegation/contracts");  // "" when baseUrl omitted
+// getScriptVersion("") → fetch("" + "/api/contracts/current?name=" + ...)  // relative URL
+```
+
+`revokeDelegation` receives the authenticated `client` (which knows its node URL), but
+the version-lookup path ignores it and falls back to `""`. A relative URL is
+unconditionally unparseable by `fetch` in Node/undici, so the default revoke path can
+never succeed; documentation alone cannot fix it.
+
+**Suggested fix:** Default `baseUrl` to the client's configured node URL (the value
+behind `getNodeUrl()` / the client's `baseUrl` config) when `opts.baseUrl` is omitted,
+before calling `getScriptVersion`.
+
+---
+
+## BUG-002 — `buildDelegationCredential()` cannot represent a canonical tenant contract name
+
+- **Component:** `buildDelegationCredential` / `validateCredentialBody` (`MAX_CONTRACT_LEN`)
+  vs `canonicalTenantName` / `validateTail` (`TAIL_PATTERN`)
+- **Severity:** Medium-High — blocks delegating an agent to a tenant contract with a
+  normal tail, which is the central agent-authorisation use case.
+
+**Summary**
+
+The SDK's own `canonicalTenantName(tenantDid, tail)` produces contract script names of
+the form `z:<40-hex-tid>:<tail>` (length `43 + tail.length`), and
+`validateTail` / `TAIL_PATTERN` accept tails of 1–128 characters. But
+`buildDelegationCredential` rejects any `contract` longer than `MAX_CONTRACT_LEN = 46`
+with `ContractTooLong`. As a result, **any tenant contract whose tail is ≥ 4 characters
+cannot be named in a delegation credential** — the SDK generates contract identifiers
+that its own credential validator rejects.
+
+**Steps to reproduce**
+
+```ts
+import * as sdk from "@terminal3/t3n-sdk";
+const tid  = "did:t3n:" + "a".repeat(40);
+const name = sdk.canonicalTenantName(tid, "banking-contracts"); // len 60
+sdk.buildDelegationCredential({
+  user_did: tid, org_did: tid, contract: name,
+  agent_pubkey: /* 33 bytes */, vc_id: /* 16 bytes */,
+  functions: ["query-lenders"], not_before_secs: 0n, not_after_secs: 9999999999n,
+});
+// → throws "ContractTooLong"
+```
+
+Run `node --import tsx scripts/sdk-bugs.ts` (BUG 2). Even the minimal overflow case
+`z:<40hex>:abcd` (47 chars) is rejected.
+
+**Expected:** Either (a) the `contract` field accommodates a full `z:<tid>:<tail>`
+script name so a credential can authorise a tenant contract, or (b) the field's
+required form for tenant contracts is documented and enforced consistently with
+`canonicalTenantName` / `validateTail`.
+
+**Actual:** `MAX_CONTRACT_LEN = 46` is shorter than the minimum length of a canonical
+tenant contract name with a ≥ 4-character tail (47); the two SDK components disagree.
+
+**Root cause**
+
+```js
+MAX_CONTRACT_LEN = 46;
+TAIL_PATTERN     = /^[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,127}$/;   // tails up to 128 chars
+canonicalTenantName = (did, tail) => "z:" + tenantDidHex(did) + ":" + validateTail(tail);
+// "z:" (2) + 40 hex + ":" (1) + tail  =  43 + tail.length
+```
+
+This is an internal inconsistency between two SDK functions: `canonicalTenantName`
+accepts inputs that `validateCredentialBody` rejects.
+
+**Suggested fix:** Raise `MAX_CONTRACT_LEN` to cover canonical tenant script names
+(≥ `43 + 128`), or split "system contract id" from "tenant script name" with documented
+bounds for each.
+
+---
+
+## BUG-003 — `b64uDecodeStrict()` accepts non-canonical base64url
+
+- **Component:** `b64uDecodeStrict` / `b64uDecode`
+- **Severity:** Low-Medium — a function named *Strict* silently accepts malformed input.
+  In a system that signs and keys on canonical bytes (credential JCS, `vc_id`), encoding
+  malleability is a correctness and security concern.
+
+**Summary**
+
+`b64uDecodeStrict` (a direct alias of `b64uDecode`) does not verify that the trailing
+bits of the final base64url quantum are zero. As a result, distinct input strings decode
+to **identical** bytes — for example `"AA"` and `"AB"` both decode to `[0x00]`.
+
+**Steps to reproduce**
+
+```ts
+import * as sdk from "@terminal3/t3n-sdk";
+sdk.b64uDecodeStrict("AA"); // Uint8Array [0x00]
+sdk.b64uDecodeStrict("AB"); // Uint8Array [0x00]  ← should be rejected (non-zero trailing bits)
+sdk.b64uEncodeBytes(sdk.b64uDecodeStrict("AB")); // "AA"  (≠ "AB")
+```
+
+Run `node --import tsx scripts/sdk-bugs.ts` (BUG 3).
+
+**Expected:** A strict base64url decoder rejects non-canonical input (RFC 4648 §3.5 —
+trailing bits must be zero), so decoding is injective.
+
+**Actual:** Trailing non-zero bits are silently discarded; `"AB"` decodes to the same
+bytes as `"AA"`.
+
+**Root cause**
+
+`b64uDecode` only throws when the leftover bit count is `>= 6` (a length error); it never
+checks that the discarded `< 6` trailing bits are zero:
+
+```js
+// ... accumulate 6 bits per char, emit bytes ...
+if (bitsLeftover >= 6) throw new Error("invalid length");   // only length is checked
+return Uint8Array.from(out);                                // trailing bits never validated
+```
+
+**Suggested fix:** After the loop, throw if the leftover bits are non-zero, and reject
+inputs whose length is `% 4 == 1`.
+
+---
+
+## BUG-004 — `toBaseUnits()` uses floating-point math and loses precision
+
+- **Component:** `toBaseUnits`
+- **Severity:** Low — financial unit conversion via `number` / `Math.round` is lossy;
+  for a token/credit system this can misstate base-unit amounts.
+
+**Summary**
+
+`toBaseUnits(value: number)` computes `Math.round(value * BASE_UNITS_PER_TOKEN)` in
+IEEE-754 double precision. For inputs beyond ~2^53 (or with many fractional digits) the
+result is wrong, and can even be returned in scientific notation — a non-integer
+base-unit count.
+
+**Steps to reproduce**
+
+```ts
+import * as sdk from "@terminal3/t3n-sdk";
+sdk.toBaseUnits(9007199254740992); // 9.007199254740992e+21  (not an exact integer base-unit count)
+```
+
+Run `node --import tsx scripts/sdk-bugs.ts` (MINOR).
+
+**Expected:** Exact integer base-unit conversion that accepts string/bigint amounts and
+round-trips with the BigInt-based `formatTokens`.
+
+**Actual:** Float multiplication plus `Math.round` produces precision loss and
+scientific-notation output, asymmetric with the BigInt-based `formatTokens`.
+
+**Root cause**
+
+```js
+toBaseUnits = v => Math.round(v * BASE_UNITS_PER_TOKEN);
+```
+
+**Suggested fix:** Accept `string | bigint`, parse the decimal, and scale in BigInt
+(mirroring `formatTokens`).

@@ -1,111 +1,122 @@
-# Documentation Gaps — Terminal 3 ADK
+# Terminal 3 — Documentation Gaps
 
-> Running log for the Bug Discovery Bounty (documentation-gaps track).
-> Rules: must be SDK-related, actionable, verifiable, reproducible, and require a
-> change to fix. First valid report wins duplicates. Validate before submitting.
-> Each entry: location → gap → why it matters → suggested fix. Status: DRAFT until
-> reproduced against live docs/testnet.
+**Reporter:** fadhmusty@gmail.com
+**Package:** `@terminal3/t3n-sdk@3.8.0`
+
+Each gap below is verified either against the published package types
+(`dist/index.d.ts`) or against the live documentation at `docs.terminal3.io`, with the
+exact location and evidence cited.
 
 ---
 
-### GAP-001 — `cargo-component` referenced but never installed (set-up-dev-env)
-- **Location:** `docs.terminal3.io/developers/adk/get-started/prerequisites/set-up-dev-env`
-- **Gap:** Prose references `cargo-component`, but the only install command shown is
-  `cargo install wasm-tools`. A new dev following the steps never installs
-  `cargo-component`, yet the contract build (component model) appears to need it.
-- **Why it matters:** Build step fails for a first-time user following docs literally.
-- **Suggested fix:** Either add the `cargo install cargo-component` step, or remove
-  the reference and clarify that `cargo build --target wasm32-wasip2` + `wasm-tools`
-  is sufficient.
-- **Status:** DRAFT — reproduce by following setup on a clean machine (we are a clean
-  machine: Rust not installed). Confirm whether build needs cargo-component.
+## DOC-001 — The programmatic delegation API is undocumented
 
-### GAP-002 — "4 steps" but five Step blocks render (set-up-dev-env)
-- **Location:** same page.
-- **Gap:** Page says "4 steps" while rendering five `<Step>` blocks.
-- **Why it matters:** Minor, but a factual inconsistency in onboarding.
-- **Suggested fix:** Correct the count or merge steps.
-- **Status:** DRAFT — low severity; bundle with GAP-001.
-
-### GAP-003 — Delegation is documented as dashboard-only but is fully in the SDK
 - **Location:** `docs.terminal3.io/t3n/data-owner-guide/delegate-access`
-- **Gap:** The data-owner guide presents granting/revoking an agent's access as a
-  **Dashboard-only** workflow (AI Agents → New agent / Remove). But
-  `@terminal3/t3n-sdk@3.8.0` exports a complete programmatic delegation API
-  (`buildDelegationCredential`, `signCredential`, `signAgentInvocation`,
-  `revokeDelegation`, `DelegationCustodialClient`). The docs never point developers
-  to it, so an SDK-first developer would wrongly conclude code-based delegation
-  isn't possible.
-- **Why it matters:** The headline use case (agentic apps creating/scoping/revoking
-  authority in code) is fully supported but undiscoverable from the docs.
-- **Suggested fix:** Add a developer page documenting the delegation-credential API
-  (build → canonicalise → sign → invoke → revoke), with the validity-window and
-  per-function-revocation semantics, and cross-link from the data-owner guide.
-- **Status:** CONFIRMED from package types. HIGH VALUE (a genuine doc gap, now
-  correctly framed as "documented as dashboard-only, actually in SDK"). Reproduce
-  by citing exports + the guide.
-
-### GAP-004 — `agent-auth-update` term in docs doesn't match SDK vocabulary
-- **Location:** `invoke-contract` references the data owner signing an
-  `agent-auth-update` grant. The SDK has no such symbol; the actual mechanism is a
-  signed **DelegationCredential** (`buildDelegationCredential` + `signCredential`).
-- **Why it matters:** Terminology mismatch between docs and SDK confuses devs
-  searching for `agent-auth-update`.
-- **Suggested fix:** Align docs terminology with the SDK (DelegationCredential), or
-  define `agent-auth-update` and map it to the SDK calls.
-- **Status:** CONFIRMED from package types. Tie to GAP-003.
-
-### GAP-008 — invoke-contract payload shape: docs vs types mismatch
-- **Location:** `developers/adk/get-started/walkthrough/invoke-contract` vs
-  `@terminal3/t3n-sdk@3.8.0` `ContractExecuteInput`.
-- **Gap:** Docs show
-  `executeAndDecode({ script_name, script_version, function_name, input })`
-  (snake_case, 4 fields). The typed `ContractExecuteInput` is
-  `{ version, functionName, input }` (camelCase, no script_name). Unclear which the
-  runtime accepts.
-- **Why it matters:** A developer copying the doc example may pass a payload the
-  typed API/runtime rejects (or vice versa).
-- **Suggested fix:** Reconcile the example with the published types; document the
-  canonical payload shape for `execute`/`executeAndDecode`.
-- **Status:** CONFIRMED mismatch in source materials. **Reproduce on testnet** to
-  determine which the server accepts before final submission (could be a bug or a
-  doc error — classify after repro).
-
-### GAP-005 — Audit query API (`getAuditEvents`) exists but is undocumented
-- **Location:** product/overview pages describe an "immutable audit ledger"; the SDK
-  exposes `T3nClient.getAuditEvents(opts)` → `AuditPage` (with `AuditEvent`,
-  `AuditBatch`, `GetAuditEventsOptions`), but **no docs page documents it**.
-- **Why it matters:** Compliance/enterprise audit retrieval — a headline feature — is
-  fully implemented in the SDK yet undiscoverable from docs. Devs can't find the
-  `actor`/`subject`/`vc_id`/`committed` semantics (which are subtle: `committed`
-  gates whether an `outcome:"success"` is durable vs a contract claim).
-- **Suggested fix:** Add an audit page documenting `getAuditEvents`, the event/batch
-  shapes, the `committed` caveat, and the delegated-read rule (reading another
-  user's trail requires a live grant).
-- **Status:** CONFIRMED from package types. Reproduce by citing exports + absence in
-  docs index (llms.txt). Verify delegated-read-requires-live-grant on testnet — that
-  is also a great demo assertion.
-
-### GAP-006 — `adk-getting-start` repo is empty
-- **Location:** `github.com/Terminal-3/adk-getting-start`
-- **Gap:** Linked as the getting-started/quickstart repo but contains no files.
-- **Why it matters:** Devs landing there get nothing; onboarding friction.
-- **Suggested fix:** Populate with the walkthrough code, or remove/redirect to
-  `z-tenant-flight`.
-- **Status:** DRAFT — verify it's still empty at submission time.
-
-### GAP-007 — `client.contracts` lifecycle methods inconsistently documented
-- **Location:** `what-is-adk` overview lists `publish`/`enable`/`disable`/`unregister`;
-  the `register-contract` walkthrough documents only `register` and explicitly says
-  "no `publish` or `enable` methods."
-- **Why it matters:** Contradiction about which lifecycle methods exist.
-- **Suggested fix:** Reconcile the overview with the reference; document the real set.
-- **Status:** DRAFT — verify actual method set against the installed package types.
+- **Evidence:** The package exports a complete delegation lifecycle —
+  `buildDelegationCredential`, `canonicaliseCredential`, `signCredential`,
+  `validateCredentialBody`, `buildInvocationPreimage`, `signAgentInvocation`,
+  `revokeDelegation`, and `DelegationCustodialClient`, alongside constants such as
+  `DELEGATION_CREDENTIAL_DOMAIN`, `DELEGATION_INVOCATION_DOMAIN`, and
+  `MAX_FUNCTIONS_PER_CREDENTIAL`.
+- **Gap:** The data-owner guide presents granting and revoking an agent's access as a
+  Dashboard-only workflow ("AI Agents" tab → "New agent" / "Remove"). It does not
+  mention `buildDelegationCredential`, `signCredential`, `revokeDelegation`, or any
+  other SDK function. A developer reading this guide would conclude that delegation
+  cannot be performed in code.
+- **Why it matters:** Minting, scoping, and revoking agent authority in code is the
+  headline use case for an agentic SDK, yet it is undiscoverable from the documentation.
+- **Suggested fix:** Add a "Delegation in the SDK" developer page documenting the full
+  credential lifecycle (build → canonicalise → user-sign → per-call agent-sign →
+  revoke), including validity-window and per-function revocation semantics, and
+  cross-link it from the data-owner guide.
 
 ---
 
-## To verify once we have an API key / installed SDK
-- [ ] Inspect `@terminal3/t3n-sdk` TypeScript types for the real exported surface.
-- [ ] Pull `docs.terminal3.io/terminal-3-openapi.yml` + `api-reference/openapi.json`
-      for grant/revoke + audit endpoints (resolves GAP-003/004/005).
-- [ ] Reproduce GAP-001 by building a contract on this clean machine.
+## DOC-002 — The audit query API (`getAuditEvents`) is undocumented
+
+- **Location:** SDK export with no corresponding developer page (absent from the docs
+  index at `docs.terminal3.io/llms.txt`).
+- **Evidence:** `T3nClient.getAuditEvents(opts?: GetAuditEventsOptions): Promise<AuditPage>`
+  returns audit events whose archived batches carry a `committed: boolean` flag
+  ("committed fact — filter on this when you need only durable events").
+- **Gap:** Product material references an immutable audit ledger, but no documentation
+  page covers how to read it through the SDK, nor the meaning of `committed` (which
+  distinguishes a durable event from an in-flight contract-level claim).
+- **Why it matters:** Audit retrieval is a core compliance capability that is fully
+  implemented but undiscoverable, and the `committed` semantics are easy to misread
+  without guidance.
+- **Suggested fix:** Document `getAuditEvents`, the event and batch shapes, and the
+  meaning of the `committed` flag.
+
+---
+
+## DOC-003 — `invoke-contract` example payload does not match the published type
+
+- **Location:** `docs.terminal3.io/developers/adk/get-started/walkthrough/invoke-contract`
+- **Evidence:** The walkthrough's example calls
+  `executeAndDecode({ script_name, script_version, function_name, input })`
+  (snake_case, four fields). The published type is
+  `interface ContractExecuteInput { version: string; functionName: string; input?: unknown }`
+  (camelCase, no `script_name`).
+- **Gap:** The documented example and the package type disagree on field names and on
+  whether `script_name` belongs in the payload.
+- **Why it matters:** A developer copying the example passes a shape that does not match
+  the published type, and cannot tell from the docs which form the runtime accepts.
+- **Suggested fix:** Reconcile the example with `ContractExecuteInput` and document the
+  canonical payload for each execute entry point.
+
+---
+
+## DOC-004 — `authenticate()` returns a `Did` object, but examples treat it as a string
+
+- **Location:** SDK type vs. usage in examples.
+- **Evidence:** `interface Did { readonly value: string; toString(): string }`, and
+  `authenticate(...)` resolves to a `Did`, not a `string`.
+- **Gap:** Examples use the authenticated DID as if it were a plain string. At runtime
+  `did === "did:t3n:…"` is `false`; the underlying string must be read via `did.value`
+  (or coerced with `String(did)` / a template literal). This behaviour is correct per
+  the type but is never explained in prose or examples.
+- **Why it matters:** Treating the return value as a string fails silently — for
+  example when used as an object key, in equality checks, or during serialisation.
+- **Suggested fix:** Show `did.value` in examples and document the `Did` object shape.
+
+---
+
+## DOC-005 — The delegation `contract` field's required form and limits are undocumented
+
+- **Location:** `BuildDelegationCredentialOpts.contract` (SDK type / JSDoc).
+- **Evidence:** The field is documented only as `/** Contract id, e.g. "tee:payroll". */`
+  and is capped at 46 characters. Tenant contracts, however, are named
+  `z:<40-hex>:<tail>` by `canonicalTenantName`.
+- **Gap:** The documentation never states what `contract` must contain for a tenant
+  contract, how it relates to the `z:<tid>:<tail>` script name used at invocation, or
+  that a length limit applies.
+- **Why it matters:** A developer cannot determine which value authorises an agent for a
+  tenant contract. (This also surfaces as a functional defect — see `BUGS.md` BUG-002,
+  where the 46-character limit is incompatible with canonical tenant names.)
+- **Suggested fix:** Document the exact value the `contract` field must hold for system
+  and tenant contracts, and its length bound.
+
+---
+
+## DOC-006 — Dev-environment setup page states "4 steps" but renders five
+
+- **Location:** `docs.terminal3.io/developers/adk/get-started/prerequisites/set-up-dev-env`
+- **Evidence:** The subtitle reads "Quick 4 steps to set up your development
+  environment", while five steps render: (1) Get your API key and DID, (2) Install Rust
+  + WASM toolchain, (3) Install the SDK, (4) Set up the SDK, (5) Authenticate to T3N
+  testnet.
+- **Why it matters:** A factual inconsistency on the first onboarding page.
+- **Suggested fix:** Correct the count to five, or merge two steps.
+
+---
+
+## DOC-007 — The linked getting-started repository is empty
+
+- **Location:** `github.com/Terminal-3/adk-getting-start`
+- **Evidence:** The repository is empty (GitHub reports `size: 0`, and the contents API
+  returns "This repository is empty").
+- **Why it matters:** A developer following the getting-started link finds no code,
+  creating immediate onboarding friction.
+- **Suggested fix:** Populate the repository with the walkthrough source, or redirect the
+  link to a populated example.
