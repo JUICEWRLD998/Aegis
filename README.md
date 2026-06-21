@@ -30,14 +30,15 @@ nothing leaked."* Aegis answers both, by construction:
 | TEE contract (Rust→WASM) | Private banking logic runs in the enclave | `contract/` |
 | `http` host interface (no PII) | `query-lenders` indicative offers | `contract/src/lenders.rs` |
 | `http-with-placeholders` ({{profile.*}}) | `submit-application` PII resolved host-side | `contract/src/application.rs` |
-| Agent-auth grant (contract + functions + allowed hosts) | Scoped delegated authority; egress gating | onboarding / dashboard* |
-| `contracts.register` | Deploy the WASM contract | `scripts/` (Day 1–3) |
-| KV maps / secrets (`z:<tid>:secrets`) | Lender API keys held in-enclave | `contract/src/*` |
+| Programmatic delegation (`buildDelegationCredential` → `signCredential` → `signAgentInvocation` → `revokeDelegation`) | Scoped delegated authority; per-call agent signing; whole-credential + per-function revoke* | `src/t3/delegation.ts` |
+| `contracts.register` | Deploy the WASM contract | `src/t3/client.ts` |
+| KV maps / secrets (`z:<tid>:secrets`) | Lender API keys held in-enclave | `contract/src/*`, `src/t3/vault.ts` |
 | `getUsage` token metering | Surface credit balance, guard actions | `src/t3/client.ts` |
-| Audit ledger | Provenance trail in the UI | TBD — see `docs/SDK_FINDINGS.md` §9 |
+| `getAuditEvents` ledger | Provenance trail in the UI audit panel | `src/t3/audit.ts` |
 
-\* Grant/revoke is dashboard-only in current testnet (logged as `docs/DOCS-GAPS.md`
-GAP-003); we probe the OpenAPI spec for a programmatic path.
+\* The SDK ships the full delegation lifecycle programmatically, but it is undocumented
+(`docs/DOCS-GAPS.md` DOC-001) and two default call paths are broken (`docs/BUGS.md`
+BUG-001, BUG-002). `src/t3/delegation.ts` implements it with the documented workarounds.
 
 ## Architecture
 
@@ -67,8 +68,18 @@ Chat UI ──▶ Agent runtime (OpenRouter→Gemini, tool loop)
 ```bash
 cp .env.example .env        # fill T3N_API_KEY + OPENROUTER_API_KEY
 npm install
-npm run t3:smoke            # validate T3 session against testnet
-npm run dev
+npm run t3:smoke            # validate a live T3 session against testnet
+npm run dev                 # full UI at http://localhost:3000
+```
+
+Headless demos / verification (each loads `.env`):
+
+```bash
+npm run agent:demo         # agent tool loop end-to-end
+npm run lenders:demo       # query-lenders + submit-application against mock lenders
+npm run ui-e2e             # drives the session/consent/step-up flow
+npm run edge-cases         # adversarial / security edge-case suite
+npm run sdk-bugs           # offline, deterministic repro for docs/BUGS.md (no API key)
 ```
 
 Contract build (Day 1 toolchain):
@@ -83,16 +94,31 @@ cd contract && cargo build --release --target wasm32-wasip2
 ```
 contract/        Rust→WASM TEE contract (the privacy core)
 src/t3/          SDK adapter — single chokepoint for all T3 calls
-src/agent/       OpenRouter/Gemini client + tool loop
-src/banks/       mock lender API routes (verify agent + proof, return offers)
-app/             Next.js UI (chat, consent, step-up, audit panel)
-scripts/         t3-smoke, register/deploy helpers
-docs/            SDK_FINDINGS, BUGS, DOCS-GAPS (bug-bounty trackers)
-HACKATHON_PLAN.md  master plan
+                   (client, delegation, audit, profile, vault, banking)
+src/agent/       OpenRouter/Gemini client + tool loop (identity, guardrail, context)
+src/lenders/     mock lender API logic (verify agent + proof, return offers)
+src/server/      in-memory session + event store (consent, step-up, SSE)
+src/app/         Next.js UI + API routes (chat, consent, step-up, audit panel)
+scripts/         t3-smoke, demos, edge-case + SDK-bug repro suites
+docs/            BUGS, DOCS-GAPS (bug-bounty trackers)
 ```
 
 ## Status
 
-Phase 0 complete: recon done, real SDK model captured (`docs/SDK_FINDINGS.md`),
-scaffold + contract skeleton in place, bug/gap trackers seeded. Next: claim API
-key → `t3:smoke` → wire identity + grant (Phase 1).
+End-to-end flow built and demoable:
+
+- **Identity + delegation** — agent authenticates as its own `did:t3n`; user signs a
+  scoped delegation credential (contract + functions + bounded validity window); the
+  agent signs every invocation under it; whole-credential and per-function revoke.
+  (`src/t3/delegation.ts`)
+- **Private banking flow** — `query-lenders` (no PII) and `submit-application`
+  (`{{profile.*}}` placeholders resolved host-side) against three mock lenders. The
+  privacy boundary is enforced in the TEE contract and mirrored in TS so the agent/LLM
+  path is provably PII-free in the demo regardless of org-data uptime.
+- **Human-in-the-loop step-up** before the irreversible application submit, over an SSE
+  session channel (`src/server/`, `src/app/api/session/*`).
+- **Audit panel** — live provenance trail via `getAuditEvents` (`src/t3/audit.ts`).
+- **Bug-bounty deliverables** — 4 reproducible SDK bugs (`docs/BUGS.md`) and 7
+  documentation gaps (`docs/DOCS-GAPS.md`), each with a one-command repro.
+
+Quick check: `npm run t3:smoke` (live session) → `npm run dev` (full UI).
