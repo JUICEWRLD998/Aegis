@@ -201,7 +201,8 @@ export default function Home() {
       {/* ── chat column ─────────────────────────────── */}
       <div className="panel">
         <div className="brand">
-          <div className="logo">A</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="logo" src="/aegis.png" alt="Aegis" width={36} height={36} />
           <div>
             <h1>Aegis</h1>
             <p>Verifiable agentic private banker</p>
@@ -309,6 +310,15 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* ── connecting loader ───────────────────────── */}
+      {!ready && (
+        <div className="boot" aria-busy="true" aria-label="Connecting">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="boot-logo" src="/aegis.png" alt="Aegis" width={72} height={72} />
+          <div className="boot-label">Connecting to Terminal 3…</div>
+        </div>
+      )}
 
       {/* ── approval modals ─────────────────────────── */}
       {pending?.kind === "consent" && <ConsentModal req={pending.request as ConsentReq} onDecide={decide} />}

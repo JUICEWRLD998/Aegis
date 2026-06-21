@@ -89,10 +89,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .brand .logo {
   width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), #8a5bff);
-  display: grid; place-items: center;
-  font-weight: 700; font-size: 17px; color: white;
-  box-shadow: 0 4px 16px rgba(91, 140, 255, 0.45);
+  object-fit: contain; display: block;
+  box-shadow: 0 4px 16px rgba(20, 30, 70, 0.45);
 }
 .brand h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .brand p { margin: 2px 0 0; font-size: 12px; color: var(--text-faint); }
@@ -193,3 +191,22 @@ button.revoke.ghost:hover:not(:disabled) { color: var(--text); border-color: var
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* ── connecting loader ──────────────────────────────────── */
+.boot {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: radial-gradient(900px 600px at 50% 30%, #15233f 0%, var(--bg) 60%);
+  animation: boot-fade 0.3s ease;
+}
+.boot-logo {
+  width: 72px; height: 72px; object-fit: contain;
+  filter: drop-shadow(0 8px 28px rgba(20, 30, 70, 0.6));
+  animation: boot-pulse 1.6s ease-in-out infinite;
+}
+.boot-label { font-size: 13px; color: var(--text-faint); letter-spacing: 0.01em; }
+@keyframes boot-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes boot-fade { from { opacity: 0; } to { opacity: 1; } }
