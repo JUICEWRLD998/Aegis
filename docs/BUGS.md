@@ -5,8 +5,14 @@
 **Environment:** Node v24.14.1, Windows 11. Testnet node `https://cn-api.sg.testnet.t3n.terminal3.io`.
 
 Every bug below reproduces with a single offline, deterministic command — no network
-and no API key required:
+and no API key required. Install dependencies once, then run the repro script:
 
+```bash
+npm install                              # pulls @terminal3/t3n-sdk@3.8.0 + tsx
+node --import tsx scripts/sdk-bugs.ts     # runs all four repros, offline
+```
+
+Each report also cites the individual case (e.g. `BUG 1`) printed by that script.
 
 ---
 

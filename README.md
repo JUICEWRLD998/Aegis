@@ -13,9 +13,11 @@ Enterprises and regulators have one shared fear about agentic finance:
 *"An AI is about to move money and touch PII — prove it's authorized, and prove
 nothing leaked."* Aegis answers both, by construction:
 
-- **Verifiable agent identity** — the agent acts as its own `did:t3n:…`.
-- **Scoped delegated authority** — the user grants the agent access to a specific
-  contract, functions, and allowed hosts. Egress is denied without it.
+- **Verifiable agent identity** — the agent acts as its own `did:t3n:…`, distinct from
+  the user it works for.
+- **Scoped delegated authority** — the user grants the agent a single contract and an
+  explicit function allowlist, for a bounded window. Anything outside the grant is
+  refused by the enclave.
 - **Data minimization by hardware** — PII is resolved inside the enclave via
   `{{profile.*}}` placeholders; it never enters the agent, the LLM, or the lenders.
 - **Human-in-the-loop step-up** for the irreversible high-value action.
@@ -40,6 +42,40 @@ nothing leaked."* Aegis answers both, by construction:
 (`docs/DOCS-GAPS.md` DOC-001) and two default call paths are broken (`docs/BUGS.md`
 BUG-001, BUG-002). `src/t3/delegation.ts` implements it with the documented workarounds.
 
+## How Terminal 3 Agent Auth is used
+
+Aegis is built on **`@terminal3/t3n-sdk@3.8.0`**. Every privileged action flows through
+the Agent-Auth lifecycle — nothing the agent does is unauthenticated or unscoped. All
+SDK calls live behind one adapter (`src/t3/`) so the integration is auditable in one place.
+
+1. **Authenticated TEE session** — `client.handshake()` opens an encrypted channel to the
+   enclave; `client.authenticate(createEthAuthInput(addr))` proves the wallet and returns
+   the principal's `did:t3n`. The agent runs this with its *own* key, so it carries a
+   verifiable agent identity distinct from the user. (`src/t3/client.ts`)
+2. **User → agent delegation** — the user (data owner) signs a delegation credential
+   (`buildDelegationCredential` → `canonicaliseCredential` → `signCredential`, EIP-191)
+   scoping the agent to one contract, an explicit function allowlist (`query-lenders`,
+   `submit-application`), and a bounded validity window. (`src/t3/delegation.ts`)
+3. **Per-invocation agent signing** — for every contract call the agent builds an
+   invocation preimage (`buildInvocationPreimage`) and signs it (`signAgentInvocation`),
+   proving *this* call runs under *that* grant. The enclave rejects anything outside the
+   credential's scope or window.
+4. **Privacy-preserving execution** — `executeAndDecode` runs the WASM contract in the
+   TEE. `query-lenders` uses the `http` host interface with zero PII; `submit-application`
+   uses `http-with-placeholders`, where `{{profile.*}}` tokens resolve to PII *host-side,
+   inside the enclave* — never in the agent, the LLM, or the lender request.
+5. **Revocation** — the user can revoke the whole credential or individual functions
+   (`revokeDelegation`); the agent's events stop resolving the moment the grant is pulled.
+6. **Provenance** — `getAuditEvents` returns host-stamped events
+   (actor / subject / `vc_id` / action / outcome), shown live in the UI audit panel.
+   (`src/t3/audit.ts`)
+7. **Metering** — `getUsage` surfaces the token-credit balance to display cost and guard
+   actions when credit is exhausted. (`src/t3/client.ts`)
+
+> **Demo note:** the privacy boundary is enforced by the TEE contract *and* mirrored in
+> TypeScript (`src/t3/profile.ts`), so the agent/LLM path is provably PII-free even if
+> org-data is unavailable mid-demo — raw financial figures never enter agent or LLM code.
+
 ## Architecture
 
 ```
@@ -60,7 +96,8 @@ Chat UI ──▶ Agent runtime (OpenRouter→Gemini, tool loop)
 
 - **Next.js + TypeScript** — UI, agent runtime, mock-lender API routes (one deploy).
 - **OpenRouter → Gemini** (`gemini-2.5-pro`, `flash` fallback) — simple tool loop.
-- **`@terminal3/t3n-sdk`** — auth, contract invoke, metering.
+- **`@terminal3/t3n-sdk@3.8.0`** — Agent Auth: authenticated TEE sessions, delegation
+  credentials, contract invocation, audit, and metering.
 - **Rust → WASM (`wasm32-wasip2`)** — the TEE contract.
 
 ## Getting started
@@ -82,7 +119,7 @@ npm run edge-cases         # adversarial / security edge-case suite
 npm run sdk-bugs           # offline, deterministic repro for docs/BUGS.md (no API key)
 ```
 
-Contract build (Day 1 toolchain):
+Contract build (Rust → WASM toolchain):
 
 ```bash
 rustup target add wasm32-wasip2
@@ -107,17 +144,13 @@ docs/            BUGS, DOCS-GAPS (bug-bounty trackers)
 
 End-to-end flow built and demoable:
 
-- **Identity + delegation** — agent authenticates as its own `did:t3n`; user signs a
-  scoped delegation credential (contract + functions + bounded validity window); the
-  agent signs every invocation under it; whole-credential and per-function revoke.
-  (`src/t3/delegation.ts`)
-- **Private banking flow** — `query-lenders` (no PII) and `submit-application`
-  (`{{profile.*}}` placeholders resolved host-side) against three mock lenders. The
-  privacy boundary is enforced in the TEE contract and mirrored in TS so the agent/LLM
-  path is provably PII-free in the demo regardless of org-data uptime.
-- **Human-in-the-loop step-up** before the irreversible application submit, over an SSE
-  session channel (`src/server/`, `src/app/api/session/*`).
-- **Audit panel** — live provenance trail via `getAuditEvents` (`src/t3/audit.ts`).
+- **Agent Auth** — authenticated `did:t3n` session, user-signed scoped delegation,
+  per-call agent signing, whole-credential + per-function revoke (detailed above).
+- **Private banking** — `query-lenders` (no PII) and `submit-application`
+  (`{{profile.*}}` resolved host-side) against three mock lenders.
+- **Human-in-the-loop step-up** before the irreversible submit, over an SSE channel
+  (`src/server/`, `src/app/api/session/*`).
+- **Live audit panel** via `getAuditEvents` (`src/t3/audit.ts`).
 - **Bug-bounty deliverables** — 4 reproducible SDK bugs (`docs/BUGS.md`) and 7
   documentation gaps (`docs/DOCS-GAPS.md`), each with a one-command repro.
 
