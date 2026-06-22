@@ -23,7 +23,7 @@ nothing leaked."* Aegis answers both, by construction:
 - **Human-in-the-loop step-up** for the irreversible high-value action.
 - **Auditability** — every action attributable to who/whose-authority/what/when.
 
-## SDK Integration Map (the heart of the submission)
+## SDK Integration Map 
 
 | Terminal 3 primitive | Where Aegis uses it | Code |
 |---|---|---|
@@ -38,9 +38,6 @@ nothing leaked."* Aegis answers both, by construction:
 | `getUsage` token metering | Surface credit balance, guard actions | `src/t3/client.ts` |
 | `getAuditEvents` ledger | Provenance trail in the UI audit panel | `src/t3/audit.ts` |
 
-\* The SDK ships the full delegation lifecycle programmatically, but it is undocumented
-(`docs/DOCS-GAPS.md` DOC-001) and two default call paths are broken (`docs/BUGS.md`
-BUG-001, BUG-002). `src/t3/delegation.ts` implements it with the documented workarounds.
 
 ## How Terminal 3 Agent Auth is used
 
